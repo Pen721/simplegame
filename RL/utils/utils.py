@@ -26,12 +26,13 @@ def sample_trajectories(policy, game, n=10, max_step=10):
                 action_probs = policy(state_tensor)
 
             action_distribution = torch.distributions.Categorical(action_probs)
-            action = action_distribution.sample()
+            action = action_distribution.sample().item()
 
-            result = env.step(action.item())
+            result = env.step(action)
+
             next_state, reward, done = result['state'], result['reward'], result['done']
 
-            trajectory.append((state, action.item(), reward))
+            trajectory.append((state, action, reward))
 
             state = next_state
             step += 1
@@ -67,4 +68,5 @@ def plot_rewards(trajectories):
     plt.show()
 
     # Print final state
-    print(f"Final state - Time: {time[-1]}, Resources: {[r[-1] for r in resources]}")
+    # print(f"Final state - Time: {time[-1]}, Resources: {[r[-1] for r in resources]}")
+    print(f"Average Reward at time by time {time[-1]}, {len(trajectories)} sampled trajectories: {np.mean([r[-1] for r in resources])}")

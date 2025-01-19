@@ -12,7 +12,7 @@ class ActionOneBetterThanActionZero(ResourceGame):
         super().update_states(action)
         old_resources = self.resources
 
-        if action == "Spend":  # Spend
+        if action == 1:  # Spend
             if self.resources > 0:
                 self.resources += np.random.randint(1, 1000)
                 self.resources -= 1

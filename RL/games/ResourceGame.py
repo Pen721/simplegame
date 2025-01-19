@@ -23,7 +23,7 @@ class ResourceGame:
         return self._get_state()
     
     def update_states(self, action):
-        assert(action in ["Spend", "Save"])
+        assert(action in [0, 1])
 
     def step(self, action):
         reward = self.update_states(action)
