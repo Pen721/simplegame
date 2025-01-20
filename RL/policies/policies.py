@@ -74,14 +74,15 @@ class AllPastStatePolicy(Policy):
         # States and rewards remain as raw values, actions as binary indices.
         # """
         # Add batch dimension
+        states = states if torch.is_tensor(states) else torch.tensor(states)
+        actions = actions if torch.is_tensor(actions) else torch.tensor(actions)
         if states.dim() == 2:
-            states = torch.tensor(states.unsqueeze(0))
+            states = states.unsqueeze(0)
         if actions.dim() == 1:
-            actions = torch.tensor(actions.unsqueeze(0))
+            actions = actions.unsqueeze(0)
             
         # Get action probabilities
-        with torch.no_grad():
-            return torch.softmax(self.forward(states, actions), dim=-1)
+        return self.forward(states, actions)
     
     def get_next_action(self, states, actions):
         return torch.multinomial(self.get_next_action_dist(states, actions), num_samples=1).item()
