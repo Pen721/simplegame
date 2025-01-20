@@ -3,6 +3,8 @@ import inspect
 import sys
 from typing import Type, List, TypeVar
 import logging
+from games.games import ResourceGame
+from policies.policies import Policy, SingleStatePolicy, AllPastStatePolicy
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -62,10 +64,6 @@ def initialize_game_system():
     ]
     
     game_loader.reload_modules(modules_to_reload)
-    
-    from games.ResourceGame import ResourceGame
-    from policies.Policy import Policy, OneStatePolicy, allPastStatePolicy
-    
     games = game_loader.load_subclasses(
         'games.games',
         ResourceGame
@@ -74,7 +72,7 @@ def initialize_game_system():
     policies = policy_loader.load_subclasses(
         'policies.policies',
         Policy,
-        exclude_classes=[OneStatePolicy, allPastStatePolicy]
+        exclude_classes=[]
     )
     
     return games, policies

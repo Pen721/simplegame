@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from policies.Policy import allPastStatePolicy
 
 def sample_trajectories(policy, game, n=10, max_step=10):
     trajectories = []
@@ -12,16 +11,18 @@ def sample_trajectories(policy, game, n=10, max_step=10):
         state = env.reset()
         done = False
         step = 0
-        while (not done) and (step < max_step):
-            actions = env.actions
-            states = env.states
-            print("actions and states")
-            print(actions)
-            print(states)
-            action_probs = policy.get_next_action_dist(states, actions)
+        actions = []
+        states = []
 
-            action_distribution = torch.distributions.Categorical(action_probs)
-            action = action_distribution.sample().item()
+        while (not done) and (step < max_step):
+            if len(actions) == 0:
+                actions = [-1]
+            states = env.states
+
+            action = policy.get_next_action(states, actions)
+            # action_distribution = torch.distributions.Categorical(action_probs)
+            # action = action_distribution.sample().item()
+            actions.append(action)
 
             result = env.step(action)
 

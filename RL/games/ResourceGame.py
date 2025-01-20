@@ -32,7 +32,7 @@ class ResourceGame:
         return {'state' : self._get_state(), 'reward' : reward, 'done' : self.done, 'other' : {}}
 
     def _get_state(self):
-        return np.array([self.resources, self.step_count])
+        return [self.resources, self.step_count]
 
     def render(self):
         print(f"Step: {self.step_count}, Resources: {self.resources}")

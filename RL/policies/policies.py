@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import torch.nn as nn
 import numpy as np
 from policies.Policy import Policy
-from policies.Policy import OneStatePolicy, allPastStatePolicy
 import torch
 import torch.nn as nn
 import numpy as np
@@ -17,6 +16,48 @@ class SingleStatePolicy(Policy):
     
     def get_next_action_dist(self, states, actions):
         return self.forward(torch.FloatTensor(states[-1]))
+    
+    def visualize_states(self):
+        landscape = {}
+        for resource in range(-10, 50):
+            for step in range(0, 100):
+                state = torch.FloatTensor([resource, step])
+                chance_of_spend = self.forward(state)[1].item()
+                landscape[(resource, step)] = chance_of_spend
+        return landscape
+    
+    def plot_policy_heatmap(self):
+        landscape = self.visualize_states()
+        
+        # Convert the dictionary to numpy arrays
+        resources, steps, chances = zip(*[(r, s, c) for (r, s), c in landscape.items()])
+
+        # Create a 2D grid
+        resource_unique = sorted(set(resources))
+        step_unique = sorted(set(steps))
+        chances_grid = np.zeros((len(resource_unique), len(step_unique)))
+        
+        for (r, s), c in landscape.items():
+            i = resource_unique.index(r)
+            j = step_unique.index(s)
+            chances_grid[i, j] = c
+        
+        # Create the plot
+        plt.figure(figsize=(10, 6))
+        plt.imshow(chances_grid, cmap='coolwarm', aspect='auto', origin='lower')
+        plt.colorbar(label='Chance of Gambling')
+        plt.title('Policy Behavior: Chance of Gambling across States (Resources, EpisodeStep)')
+        plt.xlabel('EpisodeStep')
+        plt.ylabel('Resources')
+        
+        # Set tick labels
+        step_ticks = np.linspace(0, len(step_unique)-1, 6).astype(int)
+        plt.xticks(step_ticks, [step_unique[i] for i in step_ticks])
+        
+        resource_ticks = np.linspace(0, len(resource_unique)-1, 6).astype(int)
+        plt.yticks(resource_ticks, [resource_unique[i] for i in resource_ticks])
+        
+        plt.show()
 
 class OneFCPolicy(SingleStatePolicy):
     def __init__(self, input_dim=2, output_dim=2):
@@ -62,7 +103,6 @@ class DefineFCLayersPolicy(SingleStatePolicy):
             if i < len(self.layers) - 1:
                 x = torch.relu(x)
         return torch.softmax(x, dim=-1)
-    
 
 class AllPastStatePolicy(Policy):
     def __init__(self):
@@ -76,6 +116,7 @@ class AllPastStatePolicy(Policy):
         # Add batch dimension
         states = states if torch.is_tensor(states) else torch.tensor(states)
         actions = actions if torch.is_tensor(actions) else torch.tensor(actions)
+
         if states.dim() == 2:
             states = states.unsqueeze(0)
         if actions.dim() == 1:
@@ -86,15 +127,21 @@ class AllPastStatePolicy(Policy):
     
     def get_next_action(self, states, actions):
         return torch.multinomial(self.get_next_action_dist(states, actions), num_samples=1).item()
+    
+    def visualize_states(self):
+        return "Not Implemented Yet!"
+    
+    def plot_policy_heatmap(self):
+        return "Not Implemented Yet!"
 
 class TransformerRLPolicy(AllPastStatePolicy):
     def __init__(
-        self,
+        self, 
         state_dim=2,  # (resource, timestep)
-        d_model=64,
-        nhead=4,
-        num_layers=2,
-        max_seq_length=50
+        d_model=64, 
+        nhead=4, 
+        num_layers=2, 
+        max_seq_length=100
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
@@ -106,8 +153,8 @@ class TransformerRLPolicy(AllPastStatePolicy):
             nn.Linear(d_model // 2, d_model)
         )
         
-        # Action embedding for binary action
-        self.action_embedding = nn.Embedding(2, d_model)
+        # Action embedding for -1 (no action), 0, and 1
+        self.action_embedding = nn.Embedding(3, d_model)  # 3 tokens: -1, 0, 1
         self.pos_embedding = nn.Parameter(torch.randn(1, max_seq_length, d_model))
         
         # Project the concatenated features
@@ -125,16 +172,18 @@ class TransformerRLPolicy(AllPastStatePolicy):
             num_layers=num_layers
         )
         
-        # Output head for binary policy
+        # Output head for binary policy (only outputs 0 or 1)
         self.policy_head = nn.Sequential(
             nn.Linear(d_model, 32),
             nn.ReLU(),
-            nn.Linear(32, 2)
+            nn.Linear(32, 2)  # Still only 2 outputs for actions 0 and 1
         )
         
     def forward(self, states, actions):
         # states: (batch_size, seq_len, 2) - [resource, timestep]
-        # actions: (batch_size, seq_len) - binary indices (0 or 1)
+        # actions: (batch_size, seq_len) - indices (-1, 0, or 1)
+        
+        states = states.to(torch.float32)
         
         batch_size, seq_len = states.shape[0], states.shape[1]
         
@@ -143,8 +192,10 @@ class TransformerRLPolicy(AllPastStatePolicy):
         state_features = self.state_net(states_reshaped)
         state_features = state_features.view(batch_size, seq_len, -1)
         
-        # Embed actions
-        actions = actions.long()
+        # Shift actions to be non-negative for embedding
+        # -1 -> 0, 0 -> 1, 1 -> 2
+        actions = actions + 1
+        actions = actions.int()
         action_emb = self.action_embedding(actions)
         
         # Combine features
@@ -163,10 +214,10 @@ class TransformerRLPolicy(AllPastStatePolicy):
         last_hidden = transformer_out[:, -1]
         action_logits = self.policy_head(last_hidden)
         
-        return torch.softmax(action_logits, dim=-1)
+        return torch.softmax(action_logits, dim=-1)[0]
 
     
-# class betterTransformerPolicy(TransformerPolicy):
+# class betterTransformerPolifcy(TransformerPolicy):
 #     def __init__(self, resource_vocab_size, step_vocab_size, action_vocab_size, d_model=12, nhead=4, num_layers=4, max_seq_length=100):
 #         super().__init__()
 
