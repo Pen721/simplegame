@@ -4,8 +4,21 @@ import torch.nn as nn
 import numpy as np
 from policies.Policy import Policy
 from policies.Policy import OneStatePolicy, allPastStatePolicy
+import torch
+import torch.nn as nn
+import numpy as np
 
-class OneFCPolicy(OneStatePolicy):
+class SingleStatePolicy(Policy):
+    def __init__(self):
+        super().__init__()
+
+    def get_next_action(self, state):
+        return self.forward(state)
+    
+    def get_next_action_dist(self, states, actions):
+        return self.forward(torch.FloatTensor(states[-1]))
+
+class OneFCPolicy(SingleStatePolicy):
     def __init__(self, input_dim=2, output_dim=2):
         super().__init__()
         self.fc = nn.Linear(input_dim, output_dim)
@@ -13,7 +26,7 @@ class OneFCPolicy(OneStatePolicy):
     def forward(self, x):
         return torch.softmax(self.fc(x), dim=-1)
     
-class TwoFCPolicy(OneStatePolicy):
+class TwoFCPolicy(SingleStatePolicy):
     def __init__(self, input_dim=2, embedding_dim=8, output_dim=2):
         super().__init__()
         self.fc = nn.Linear(input_dim, embedding_dim)
@@ -22,8 +35,7 @@ class TwoFCPolicy(OneStatePolicy):
     def forward(self, x):
         return torch.softmax(self.fc2(torch.relu(self.fc(x))), dim=-1)
     
-
-class ThreeFCPolicy(OneStatePolicy):
+class ThreeFCPolicy(SingleStatePolicy):
     def __init__(self, input_dim=2, embedding_dim=8, output_dim=2):
         super().__init__()
         self.fc = nn.Linear(input_dim, embedding_dim)
@@ -35,7 +47,7 @@ class ThreeFCPolicy(OneStatePolicy):
         x = torch.relu(self.fc2(x))
         return torch.softmax(self.fc3(x), dim=-1)
     
-class DefineFCLayersPolicy(OneStatePolicy):
+class DefineFCLayersPolicy(SingleStatePolicy):
     def __init__(self, input_dim=2, hidden_dim=8, output_dim=2, num_layers=10):
         super().__init__()
         self.layers = nn.ModuleList()
@@ -51,24 +63,107 @@ class DefineFCLayersPolicy(OneStatePolicy):
                 x = torch.relu(x)
         return torch.softmax(x, dim=-1)
     
-class TransformerPolicy(Policy):
-    def __init__(self, input_dim=2, d_model=8, nhead=4, num_layers=4, output_dim=2, context_length=100):
-        super().__init__()
-        self.embedding = nn.Linear(input_dim, d_model)
-        self.positional_encoding = nn.Parameter(torch.zeros(1, context_length, d_model))
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.fc_out = nn.Linear(d_model, output_dim)
 
-    def forward(self, x):
-        # x shape: (batch_size, seq_len, input_dim)
-        x = self.embedding(x)  # (batch_size, seq_len, d_model)
-        x = x + self.positional_encoding[:, :x.size(1), :]
-        x = x.permute(1, 0, 2)  # (seq_len, batch_size, d_model)
-        x = self.transformer_encoder(x)
-        x = x.mean(dim=0)  # (batch_size, d_model)
-        x = self.fc_out(x)  # (batch_size, output_dim)
-        return torch.softmax(x, dim=-1)
+class AllPastStatePolicy(Policy):
+    def __init__(self):
+        super().__init__()
+    
+    def get_next_action_dist(self, states, actions):
+        # """
+        # Prepare a sequence of (state, action, reward) tuples for the transformer.
+        # States and rewards remain as raw values, actions as binary indices.
+        # """
+        # Add batch dimension
+        if states.dim() == 2:
+            states = torch.tensor(states.unsqueeze(0))
+        if actions.dim() == 1:
+            actions = torch.tensor(actions.unsqueeze(0))
+            
+        # Get action probabilities
+        with torch.no_grad():
+            return torch.softmax(self.forward(states, actions), dim=-1)
+    
+    def get_next_action(self, states, actions):
+        return torch.multinomial(self.get_next_action_dist(states, actions), num_samples=1).item()
+
+class TransformerRLPolicy(AllPastStatePolicy):
+    def __init__(
+        self,
+        state_dim=2,  # (resource, timestep)
+        d_model=64,
+        nhead=4,
+        num_layers=2,
+        max_seq_length=50
+    ):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        
+        # Process state vector
+        self.state_net = nn.Sequential(
+            nn.Linear(state_dim, d_model // 2),
+            nn.ReLU(),
+            nn.Linear(d_model // 2, d_model)
+        )
+        
+        # Action embedding for binary action
+        self.action_embedding = nn.Embedding(2, d_model)
+        self.pos_embedding = nn.Parameter(torch.randn(1, max_seq_length, d_model))
+        
+        # Project the concatenated features
+        self.project = nn.Linear(d_model * 2, d_model)
+        
+        # Transformer encoder
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=d_model * 2,
+            batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=num_layers
+        )
+        
+        # Output head for binary policy
+        self.policy_head = nn.Sequential(
+            nn.Linear(d_model, 32),
+            nn.ReLU(),
+            nn.Linear(32, 2)
+        )
+        
+    def forward(self, states, actions):
+        # states: (batch_size, seq_len, 2) - [resource, timestep]
+        # actions: (batch_size, seq_len) - binary indices (0 or 1)
+        
+        batch_size, seq_len = states.shape[0], states.shape[1]
+        
+        # Process state vectors
+        states_reshaped = states.view(-1, states.shape[-1])
+        state_features = self.state_net(states_reshaped)
+        state_features = state_features.view(batch_size, seq_len, -1)
+        
+        # Embed actions
+        actions = actions.long()
+        action_emb = self.action_embedding(actions)
+        
+        # Combine features
+        combined = torch.cat([state_features, action_emb], dim=-1)
+        combined = self.project(combined)
+        
+        # Add positional embeddings
+        combined = combined + self.pos_embedding[:, :seq_len, :]
+        
+        # Attention mask
+        mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
+        mask = mask.to(states.device)
+        
+        # Transformer and policy head
+        transformer_out = self.transformer(combined, mask=mask)
+        last_hidden = transformer_out[:, -1]
+        action_logits = self.policy_head(last_hidden)
+        
+        return torch.softmax(action_logits, dim=-1)
+
     
 # class betterTransformerPolicy(TransformerPolicy):
 #     def __init__(self, resource_vocab_size, step_vocab_size, action_vocab_size, d_model=12, nhead=4, num_layers=4, max_seq_length=100):

@@ -13,17 +13,12 @@ def sample_trajectories(policy, game, n=10, max_step=10):
         done = False
         step = 0
         while (not done) and (step < max_step):
-            if issubclass(policy.__class__, allPastStatePolicy):
-                actions = env.actions
-                states = env.states
-
-                if len(actions) == 0:
-                    actions = [2]
-                action_probs = policy(states, actions)
-            else:
-                # Original behavior for non-transformer policies
-                state_tensor = torch.FloatTensor(state)
-                action_probs = policy(state_tensor)
+            actions = env.actions
+            states = env.states
+            print("actions and states")
+            print(actions)
+            print(states)
+            action_probs = policy.get_next_action_dist(states, actions)
 
             action_distribution = torch.distributions.Categorical(action_probs)
             action = action_distribution.sample().item()
@@ -70,3 +65,28 @@ def plot_rewards(trajectories):
     # Print final state
     # print(f"Final state - Time: {time[-1]}, Resources: {[r[-1] for r in resources]}")
     print(f"Average Reward at time by time {time[-1]}, {len(trajectories)} sampled trajectories: {np.mean([r[-1] for r in resources])}")
+
+def prepare_sequence(history, max_length=50):
+    """
+    Prepare a sequence of (state, action) tuples for the transformer.
+    States remain as raw values, actions as binary indices.
+    """
+    states, actions = zip(*history)
+    
+    # Convert to numpy arrays
+    states = np.array(states, dtype=np.float32)
+    actions = np.array(actions, dtype=np.float32)
+    
+    # Pad or truncate sequence
+    seq_len = len(states)
+    if seq_len > max_length:
+        # Take the most recent max_length elements
+        states = states[-max_length:]
+        actions = actions[-max_length:]
+    elif seq_len < max_length:
+        # Pad with zeros
+        pad_len = max_length - seq_len
+        states = np.pad(states, (pad_len, 0))
+        actions = np.pad(actions, (pad_len, 0))
+    
+    return torch.FloatTensor(states), torch.FloatTensor(actions)

@@ -14,7 +14,7 @@ class ActionOneBetterThanActionZero(ResourceGame):
 
         if action == 1:  # Spend
             if self.resources > 0:
-                self.resources += np.random.randint(1, 1000)
+                self.resources += np.random.randint(10, 100)
                 self.resources -= 1
             else:
                 self.resources -= 1
