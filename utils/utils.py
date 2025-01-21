@@ -18,7 +18,7 @@ def sample_trajectories(policy, game, n=10, max_step=10):
             if len(actions) == 0:
                 actions = [-1]
             states = env.states
-
+            
             action = policy.get_next_action(states, actions)
             # action_distribution = torch.distributions.Categorical(action_probs)
             # action = action_distribution.sample().item()

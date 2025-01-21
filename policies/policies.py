@@ -10,9 +10,6 @@ import numpy as np
 class SingleStatePolicy(Policy):
     def __init__(self):
         super().__init__()
-
-    def get_next_action(self, state):
-        return self.forward(state)
     
     def get_next_action_dist(self, states, actions):
         return self.forward(torch.FloatTensor(states[-1]))
@@ -125,9 +122,6 @@ class AllPastStatePolicy(Policy):
         # Get action probabilities
         return self.forward(states, actions)
     
-    def get_next_action(self, states, actions):
-        return torch.multinomial(self.get_next_action_dist(states, actions), num_samples=1).item()
-    
     def visualize_states(self):
         return "Not Implemented Yet!"
     
@@ -138,7 +132,7 @@ class TransformerRLPolicy(AllPastStatePolicy):
     def __init__(
         self, 
         state_dim=2,  # (resource, timestep)
-        d_model=64, 
+        d_model=8, 
         nhead=4, 
         num_layers=2, 
         max_seq_length=100
